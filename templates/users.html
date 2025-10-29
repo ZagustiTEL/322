@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Менеджер паролей</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Менеджер паролей</h1>
+            <div class="user-info">
+                <span>Пользователь: {{ username }}</span>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Назад</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-logout">Выйти</a>
+            </div>
+        </div>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <!-- Форма для добавления новых записей -->
+        <div class="password-manager-form">
+            <h2>Добавить новую запись</h2>
+            <form id="passwordForm">
+                <div class="form-group">
+                    <label for="service">Сервис/Сайт:</label>
+                    <input type="text" id="service" class="form-control">
+                </div>
+                
+                <div class="form-group">
+                    <label for="login">Логин/Email:</label>
+                    <input type="text" id="login" class="form-control" >
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Пароль:</label>
+                    <div class="password-input-container">
+                        <input type="password" id="password" class="form-control" > 
+                    </div>
+                </div>
+                
+                <button type="button" onclick="addPasswordEntry()" class="btn btn-primary">Добавить запись</button>
+            </form>
+        </div>
+
+        <!-- Список сохраненных паролей -->
+        <div class="password-entries">
+            <h2>Сохраненные пароли</h2>
+            
+            {% if password_entries %}
+                <div class="entries-list">
+                    <div class="entry-header">
+                        <span class="entry-service">Сервис</span>
+                        <span class="entry-login">Логин</span>
+                        <span class="entry-password">Пароль</span>
+                        <span class="entry-actions">Действия</span>
+                    </div>
+                    
+                    {% for entry in password_entries %}
+                        <div class="entry-item" id="entry-{{ entry.id }}">
+                            <span class="entry-service">{{ entry.service }}</span>
+                            <span class="entry-login">{{ entry.login }}</span>
+                            <span class="entry-password">
+                                <span class="password-hidden">{{ entry.password }}</span>
+
+                            </span>
+                            <span class="entry-actions">
+                                <button onclick="copyPassword({{ entry.id }})" class="btn btn-copy">Копировать</button>
+                                <button onclick="editEntry({{ entry.id }}, '{{ entry.service }}', '{{ entry.login }}', '{{ entry.password }}')" class="btn btn-edit">✏️</button>
+                                <button onclick="deleteEntry({{ entry.id }})" class="btn btn-delete">🗑️</button>
+                            </span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="no-entries">Нет сохраненных паролей. Добавьте первую запись!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        let editingEntryId = null;
+
+        // Функция для добавления новой записи
+        async function addPasswordEntry() {
+            const service = document.getElementById('service').value.trim();
+            const login = document.getElementById('login').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            if (!service || !login || !password) {
+                alert('Заполните все поля!');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/add-password-entry', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        service: service,
+                        login: login,
+                        password: password
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Запись успешно добавлена!');
+                    // Очищаем форму
+                    document.getElementById('service').value = '';
+                    document.getElementById('login').value = '';
+                    document.getElementById('password').value = '';
+                    // Обновляем страницу
+                    location.reload();
+                } else {
+                    alert('Ошибка: ' + result.error);
+                }
+            } catch (error) {
+                alert('Ошибка при добавлении записи: ' + error.message);
+            }
+        }
+        
+        // Функция для переключения видимости пароля
+        function togglePassword(entryId) {
+            const passwordHidden = document.querySelector(`#entry-${entryId} .password-hidden`);
+            const passwordValue = document.querySelector(`#entry-${entryId} .password-value`);
+            const toggleButton = document.querySelector(`#entry-${entryId} .btn-toggle`);
+            
+            if (passwordHidden.style.display === 'none') {
+                passwordHidden.style.display = 'inline';
+                passwordValue.style.display = 'none';
+                toggleButton.textContent = 'Показать';
+            } else {
+                passwordHidden.style.display = 'none';
+                passwordValue.style.display = 'inline';
+                toggleButton.textContent = 'Скрыть';
+            }
+        }
+        
+        // Функция для копирования пароля в буфер обмена
+        function copyPassword(entryId) {
+            const passwordValue = document.querySelector(`#entry-${entryId} .password-value`).textContent;
+            
+            navigator.clipboard.writeText(passwordValue).then(() => {
+                alert('Пароль скопирован в буфер обмена!');
+            }).catch(err => {
+                alert('Ошибка копирования: ' + err);
+            });
+        }
+        
+        // Функция для редактирования записи
+        function editEntry(entryId, service, login, password) {
+            // Заполняем форму данными для редактирования
+            document.getElementById('service').value = service;
+            document.getElementById('login').value = login;
+            document.getElementById('password').value = password;
+            
+            // Устанавливаем флаг редактирования
+            editingEntryId = entryId;
+            
+            // Меняем текст кнопки
+            const submitButton = document.querySelector('.password-manager-form .btn-primary');
+            submitButton.textContent = 'Обновить запись';
+            submitButton.onclick = updatePasswordEntry;
+            
+            // Прокручиваем к форме
+            document.getElementById('service').focus();
+        }
+        
+        // Функция для обновления записи
+        async function updatePasswordEntry() {
+            if (!editingEntryId) return;
+            
+            const service = document.getElementById('service').value.trim();
+            const login = document.getElementById('login').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            if (!service || !login || !password) {
+                alert('Заполните все поля!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/update-password-entry/${editingEntryId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        service: service,
+                        login: login,
+                        password: password
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Запись успешно обновлена!');
+                    // Сбрасываем форму
+                    cancelEdit();
+                    // Обновляем страницу
+                    location.reload();
+                } else {
+                    alert('Ошибка: ' + result.error);
+                }
+            } catch (error) {
+                alert('Ошибка при обновлении записи: ' + error.message);
+            }
+        }
+        
+        // Функция для отмены редактирования
+        function cancelEdit() {
+            editingEntryId = null;
+            document.getElementById('service').value = '';
+            document.getElementById('login').value = '';
+            document.getElementById('password').value = '';
+            
+            const submitButton = document.querySelector('.password-manager-form .btn-primary');
+            submitButton.textContent = 'Добавить запись';
+            submitButton.onclick = addPasswordEntry;
+        }
+        
+        // Функция для удаления записи
+        async function deleteEntry(entryId) {
+            if (confirm('Вы уверены, что хотите удалить эту запись?')) {
+                try {
+                    const response = await fetch(`/delete-password-entry/${entryId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert('Запись успешно удалена!');
+                        location.reload();
+                    } else {
+                        alert('Ошибка: ' + result.error);
+                    }
+                } catch (error) {
+                    alert('Ошибка при удалении записи: ' + error.message);
+                }
+            }
+        }
+        
+        // Функция для переключения видимости пароля в форме
+        function togglePasswordVisibility(fieldId) {
+            const passwordField = document.getElementById(fieldId);
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+            } else {
+                passwordField.type = 'password';
+            }
+        }
+    </script>
+</body>
+</html>
